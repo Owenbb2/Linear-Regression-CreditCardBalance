@@ -1,0 +1,194 @@
+---
+title: "455 Final Report"
+author: "Savvas Giannaris, Owen Brown, Brandon Tarrash, Theo Tourneux"
+output:
+  html_document:
+    df_print: paged
+---
+
+*Abstract*: Banks and credit unions offer customers the use of credit cards because they allow customers to carry less cash and allow for better protection against fraud. Although there are these great benefits, credit card companies have to take into account the risk of customers having a high debt balance and not paying it back. For this reason, if we can accurately model how much of a debt balance customers will have, we can provide a great service to credit card companies.
+
+*Questions*:
+1. Can we use Income, Limit, Rating, Number of Credit Cards (Cards), Age, Gender, Years of Education (Education), Marital Status (Married), Student Status (Student), and Ethnicity to predict an individuals credit card balance?\newline
+2. Is there multicollinearity among any of these predictor variables?\newline
+3. Are there any explanatory variables that can be removed from our data?\newline
+4. If the answer to 3 is yes, which predictors can we remove to yield the most accurate model?\newline
+5. How do we optimize our model to yield the best model while avoiding overt model complexity and over fitting?\newline
+
+First, we began by fitting the full model, with Balance regressed against every explanatory variable in our data set (Income, Limit, Rating, Cards, Age, Education, Gender, Student, Married, Ethnicity) 
+
+```{r, message = FALSE}
+library(tidyverse)
+```
+``` {r}
+data<- read.csv("Credit.csv")
+head(data)
+fullmodel<-lm(Balance~., data = data)
+summary(fullmodel)
+```
+
+
+```{r}
+{par(mfrow = c(2,2))
+plot(fullmodel)}
+```
+*Interpretation*:
+We see that our residuals are not distributed i.i.d $N(0,\sigma^2)$ because the variance is clearly non-constant. Since we have domain knowledge we know that the regression line is trying to estimate values below zero, yet this is not possible for credit card balances.
+
+```{r}
+ModnoBal0 <- data %>% filter(Balance > 0.1)
+FModnoBal0 <- lm(Balance ~., data = ModnoBal0)
+
+{par(mfrow = c(2,2))
+plot(FModnoBal0)}
+```
+*Interpretation*:
+We see that if we predict for values of balance greater than zero our linear model fits very well and our residuals are normally distributed. We no longer have problems with constant variance. Therefore if we were to deliver this model to a credit card company we could have the predicted values map to zero if a prediction was less than zero. Otherwise our prediction is good.
+
+
+We started our analysis by looking at the pairwise scatterplots between the response (Balance) and the predictors to see if a linear regression model seems appropriate. 
+
+```{r}
+library(dplyr)
+data %>% select(Income,Limit, Rating,Cards,Age,Education,Balance) %>% 
+  pairs()
+```
+
+
+We noticed that there seemed to be high collinearity between Limit and Rating and moderate multicollinearity between Income and Limit. Finally, in our plot we see that there seems to be little correlation between Balance and age or Balance and Education. These initial results will guide our intuition for the following steps. We followed up the pairwise scatterplot with a correlation matrix which confirmed our interpretation. From our computed correlation matrix below, we can clearly see that Limit and Rating have a correlation of 0.9969, which is remarkably close to 1. This indicates potential multicollinearity between these predictors, which requires investigation. 
+
+```{r}
+data %>% select(Income,Limit, Rating,Cards,Age,Education,Balance) %>% 
+  cor()
+```
+First we investigated these variables by looking at the Variance Inflation Factors (VIFs).
+```{r}
+library(faraway)
+vif(fullmodel)
+
+```
+As we can see, each of the predictors have a low VIF, with the exception of Limit and Ratings whose VIF's are both extremely high ($\geq10$). We now look to see if we can fix this by removing them from the model one at a time. 
+
+```{r}
+Nmod <- lm(Balance ~ Income + Limit + Cards + Age + Education + Gender + Student + Married + Ethnicity, data = data)
+Nmod1 <- lm(Balance ~ Income + Rating + Cards + Age + Education + Gender + Student + Married + Ethnicity, data = data)
+
+vif(Nmod)
+vif(Nmod1)
+```
+
+As we expected, the VIF's for Limit and Ratings drop significantly when we fit models without one of these two predictors. This indicates serious multicollinearity that we will need to account for. 
+Next we confirmed the multicollinearity of the Limit and Ratings predictors through an F test, which is shown later in the report.
+
+In our pairwise scatterplot, we are only able to compare the numerical variables in our data set. This inspired our initial investigation of the categorical variables (Student, Gender, Married, Ethnicity). When we looked at the summary of the full model, there were a few predictor variables that raised our suspicions. We noticed that the p-values of Gender, Married and Ethnicity were quite large in this output. Furthermore, we noticed that the p-value for Education was also very large and needed to be investigated.
+
+
+```{r}
+n<-nrow(data)
+fullmod<-lm(Balance~., data=data)
+redmod1<-lm(Balance~Income+Rating+Limit+Cards+Age+Student, data = data)
+comparison<-anova(redmod1, fullmod)
+RSS<-comparison$RSS
+df<-comparison$Res.Df
+Fstatistic<-(RSS[1]-RSS[2])/(df[1]-df[2])/(RSS[2]/df[2])
+Fstatistic>qf(.99, 1, df[2])
+```
+
+
+We used the general linear test to test the validity of certain predictors in our model. Specifically, we tested under the Null Hypothesis:$$H_0: \beta_{Education} = \beta_{Gender} = \beta_{Married} = \beta_{Ethnicity} = 0$$ We computed our F statistic $$F_0 = \frac{(RSS_{reduced} - RSS_{full})/(df_{Reduced} - df_{full})}{RSS_{full}/df_{full}}$$ We tested to see if $$F_0>F_{.99, 1,388 }$$
+
+From the results of our hypothesis test above, we accept the null hypothesis and confirm that $H_0: \beta_{Education} = \beta_{Gender} = \beta_{Married} = \beta_{Ethnicity} = 0$ with 99% confidence. Hence, these predictors can be removed from our fit regression model.
+
+Now, because of the results of our Variance Inflation Factor analysis, we know Ratings and Limit have potential multicollinearity which needs investigating. To understand the existence of multicollinearity between these variables, we performed a general linear test to test a subspace of our regression model. Specifically, we tested under the Null Hypothesis:$$H_0: \beta_{Limit} = \beta_{Ratings}$$ We computed our F statistic $$F_0 = \frac{(RSS_{reduced} - RSS_{full})/(df_{Reduced} - df_{full})}{RSS_{full}/df_{full}}$$ Where the full model is the model without $\beta_{Education}$, $\beta_{Gender}$, $\beta_{Married}$, $\beta_{Ethnicity}$. We tested to see if $$F_0>F_{.99, 1,393 }$$
+From the results of our Hypothesis test below, we accept the Null Hypothesis and confirm that $\beta_{Limit} = \beta_{Rating}$ with 99% confidence. So, we now fit the model with 5 predictors. Specfically we have $\beta_{Income}$,$\beta_{Income + Rating}$,$\beta_{Cards}$, $\beta_{Age}$, $\beta_{Student}$.
+
+```{r}
+fullmod<-lm(Balance~Income+Rating+ Limit+Cards+Age+Student, data = data)
+redmod<-lm(Balance ~Income + I(Limit +Rating) + Cards+ Age+Student,data=data)
+comparison<-anova(redmod, fullmod)
+RSS<-comparison$RSS
+df<-comparison$Res.Df
+Fstatistic<-(RSS[1]-RSS[2])/(df[1]-df[2])/(RSS[2]/df[2])
+Fstatistic>qf(.99, 1, df[2])
+```
+
+
+
+We then used the stepwise function to see if we got the same model as when we used F tests.
+
+```{r, message = FALSE, warning = FALSE}
+library(Rcmdr)
+```
+```{r}
+step_lmod=stepwise(fullmodel,direction = "backward/forward", criterion = "AIC" , trace = FALSE)
+step_lmod
+{par(mfrow = c(2,2))
+plot(step_lmod)}
+
+```
+
+Interpretation: We can see that the stepwise model selection selects the same predictors as our F tests. Looking at our residual plots we find that there is serious non-constant variance. Our normality assumption is close to optimal, nevertheless we see that we may be able to do better. 
+
+
+```{r}
+## interactions 
+lmod_interact = lm(Balance ~ (.)^2, data = data)
+lmod_interact
+step_lmod_interact =stepwise(lmod_interact,direction = "backward/forward", criterion = "AIC" , trace = FALSE)
+step_lmod_interact
+```
+```{r}
+{par(mfrow = c(2,2))
+plot(step_lmod_interact)}
+
+```
+
+Another benefit of the stepwise approach is that we can add many more predictors than we could analyze by hand. We can select predictors between all predictors and all interactions from predictors. Using this approach we are able to get a much tighter fitting model but unfortunately it comes at the cost of model complexity. We might even be able to infer that there is overfitting when taking this approach.
+
+
+
+
+When performing model selection, we want to look at different criteria to decide which predictors we want to include in our model. The criteria we will consider are Adjusted R-Squared, AIC, BIC, and Mallow's CP. It is important that we recognize which predictors are commonly selected in the regsubsets function, because each criteria is a unique measure of our model. We want to maximize Adjusted R-Squared and minimize AIC, BIC, and Mallow's CP. We will look at the predictors selected by each criteria in both forward stepwise and backward stepwise methods.
+
+```{r}
+library(leaps)
+b <- regsubsets(Balance~.,data=data)
+rs <- summary(b)
+#Adjusted R-Squared
+{par(mfrow = c(1,2))
+plot(regsubsets(Balance~., data=data, method="forward"), scale="adjr2")
+plot(regsubsets(Balance~., data=data, method="backward"), scale="adjr2")}
+
+#BIC
+{par(mfrow =c(1,2))
+plot(regsubsets(Balance~., data=data, method="forward"))
+plot(regsubsets(Balance~., data=data, method="backward"))}
+#CP
+{par(mfrow = c(1,2))
+plot(regsubsets(Balance~., data=data, method="forward"), scale="Cp")
+plot(regsubsets(Balance~., data=data, method="backward"), scale="Cp")}
+
+#Minimum Adjusted R^2, AIC and CP
+{par(mfrow = c(1,3))
+plot(1:8,rs$adjr2,xlab="No.of Predictors",
+ylab="Adj. R-Squared",type="l",lwd=2)
+points(1:8,rs$adjr2)
+#AIC
+AIC <- 400*log(rs$rss/400) + (1:8)*2
+plot(AIC~I(1:8),ylab="AIC",xlab="Number of Predictors",type="l",lwd=2)
+points(AIC)
+
+plot(1:8,rs$cp,xlab="No.of Predictors",
+ylab="Cp Statistic",type="l",lwd=2)
+points(1:8,rs$cp) }
+```
+*Interpretation*:
+The first observation we can make by looking at our graphs above is that the function never selects Education or Married as predictors, and while it does not select Ethnicity Caucasian, Ethnicity Asian is selected in only one instance. We may infer that these four predictors are not crucial for predicting balance. On the other hand, Income, Limit, Rating, Cards, and Student are commonly chosen by forward and backward stepwise for each of our criteria. Furthermore, once these predictors are selected, the change in our criteria values is miniscule, 
+i.e. Adjusted R-Squared is already at 0.95 (and BIC at -1200) and doesn't increase (decrease) by much more when we add more predictors. This is a good example of where we want to keep the simplicity of our model rather than complicating it with additional, essentially redundant, predictors. Visualization of this trade-off can be seen with the line graphs starting to level off at 3 predictors.
+
+
+
+
+
+
+
